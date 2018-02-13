@@ -65,6 +65,10 @@ def update_db(df):
         dynasty = row['朝代']
         author = row['作者']
         content = row['内容']
+        if '□' in content:
+            continue
+        if len(content) < 10:
+            continue
         db_author = session.query(Author).filter_by(name=author, dynasty=dynasty).first()
         if not db_author:
             author = Author(
