@@ -5,7 +5,7 @@ from datetime import datetime
 
 import pandas as pd
 from sqlalchemy import (
-    Column, DateTime, ForeignKey, Index, Integer, String,
+    Column, Date, DateTime, ForeignKey, Index, Integer, String, Boolean,
     Text, create_engine
 )
 from sqlalchemy.ext.declarative import declarative_base
@@ -44,14 +44,20 @@ class Poetry(Base):
     author = Column(Integer, ForeignKey("author.id"), doc='作者')
     title = Column(String(200), nullable=False, default='', doc='标题')
     content = Column(Text, nullable=False, doc='内容')
+    html = Column(Text, nullable=False, doc='网页内容')
     dynasty = Column(String(10), nullable=False, doc='朝代')
+    is_poetry = Column(Boolean, default=False)
+    image = Column(String(100))
+    published = Column(Date, nullable=True)
+    plus_count = Column(Integer, nullable=False, default=0)
+    favorite_count = Column(Integer, nullable=False, default=0)
     created = Column(DateTime, nullable=False, default=datetime.now)
     updated = Column(DateTime, nullable=False, default=datetime.now)
 
     __table_args__ = (
-        Index('ix_author', 'author'),
         Index('ix_title', 'title'),
         Index('ix_dynasty', 'dynasty'),
+        Index('ix_is_poetry', 'is_poetry'),
     )
 
 
@@ -65,9 +71,10 @@ def update_db(df):
         dynasty = row['朝代']
         author = row['作者']
         content = row['内容']
+        is_poetry = determine_ci(title, content)
         if '□' in content:
             continue
-        if len(content) < 10:
+        if get_content_length(content) < 3:
             continue
         db_author = session.query(Author).filter_by(name=author, dynasty=dynasty).first()
         if not db_author:
@@ -80,15 +87,27 @@ def update_db(df):
             session.commit()
         else:
             author = db_author
-        if not session.query(Poetry).filter_by(content=content, title=title).first():
-            poetry = Poetry(
-                title=title,
-                author=author.id,
-                content=content,
-                dynasty=dynasty,
-            )
-            session.add(poetry)
-            session.commit()
+
+        poetry = Poetry(
+            title=title,
+            author=author.id,
+            content=content,
+            html=generate_html(content),
+            dynasty=dynasty,
+            is_poetry=is_poetry,
+        )
+        session.add(poetry)
+        session.commit()
+        # if not session.query(Poetry).filter_by(content=content, title=title).first():
+        #     poetry = Poetry(
+        #         title=title,
+        #         author=author.id,
+        #         content=content,
+        #         dynasty=dynasty,
+        #         is_poetry=is_poetry,
+        #     )
+        #     session.add(poetry)
+        #     session.commit()
 
 
 def get_files():
@@ -105,6 +124,37 @@ def insert_db():
     files = get_files()
     for f in files:
         update_db(read_file(f))
+
+
+def generate_content(content):
+    return content.replace('，', '\n').replace('。', '\n').replace('；', '\n').split()
+
+
+def generate_html(content):
+    _content = content.replace('，', ',\n').replace('。', '.\n').replace('；', ';\n').split()
+    return ''.join(map(lambda x: '<p class="ql-align-center">' + x + '</p>', _content))
+
+
+def get_content_length(content):
+    _content = generate_content(content)
+    return len(_content)
+
+def determine_ci(title, content):
+    title = title.split('/')[0]
+    ci_tags = get_ci_name()
+    _content = generate_content(content)
+    _len = len(set(map(len, _content)))
+    if title in ci_tags:
+        if _len == 1 and get_content_length(content) > 3:
+            return True
+        else:
+            return False
+    return True
+
+def get_ci_name():
+    with open('词牌名.md', 'r') as f:
+        read_data = f.read()
+        return read_data.split()
 
 
 if __name__ == '__main__':
